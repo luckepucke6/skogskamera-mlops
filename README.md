@@ -1,0 +1,1 @@
+# Skogskamera MLOps
