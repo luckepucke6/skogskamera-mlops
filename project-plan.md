@@ -17,7 +17,7 @@ Status-nyckel: 🟢 kan börja nu · 🟡 väntar på beroende · ⚪ inte påb�
 - [x] `CLAUDE.md` på plats i repo-roten
 
 ### SKOG-002 — Modell mot bilder 🟢
-- [ ] Välj en färdig TFLite- eller ONNX-modell (t.ex. MobileNet SSD, eller sök efter en
+- [x] Välj en färdig TFLite- eller ONNX-modell (t.ex. MobileNet SSD, eller sök efter en
       djur/fågel-specifik klassificerare)
 - [ ] Kör modellen mot ett gäng testbilder lokalt på Mac
 - [ ] Notera prestanda/noggrannhet-avvägning — kommer behövas senare för kvantiseringsvalet
