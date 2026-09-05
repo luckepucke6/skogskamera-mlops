@@ -1,0 +1,42 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+venv/
+.venv/
+*.egg-info/
+
+# --- macOS ---
+.DS_Store
+
+# --- Editor/IDE ---
+.vscode/
+.idea/
+
+# --- Docker ---
+# (inget specifikt behövs oftast, men om ni skapar lokala volymer/data hamnar de här)
+
+# --- Modellfiler ---
+# Modellvikter hör inte hemma i git-historik i längden — de är stora och binära.
+# Undantag: om en specifik liten testmodell medvetet ska följa med i repot,
+# lägg till en explicit "!path/till/den/filen.tflite"-rad under denna sektion.
+*.tflite
+*.onnx
+*.h5
+*.pt
+*.pb
+
+# --- MLflow ---
+mlruns/
+mlartifacts/
+
+# --- Hemligheter / lokal config ---
+# Om ni någon gång lägger riktiga IP:er, tokens, eller lösenord i en lokal
+# konfigfil (t.ex. .env) istället för i CLAUDE.md, ignorera den här:
+.env
+*.local
+
+# --- Bilder/testdata (om de blir stora) ---
+# Avkommentera om test-bildmappen växer sig stor:
+# inference/test-images/
