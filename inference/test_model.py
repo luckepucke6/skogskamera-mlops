@@ -1,3 +1,5 @@
+# TESTING TESTING
+
 """
 test_model.py — SKOG-002: kör en TFLite-bildklassificerare mot en testbild.
 
