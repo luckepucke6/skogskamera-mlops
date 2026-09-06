@@ -30,6 +30,11 @@ riktiga IP:er förrän den här tabellen är ifylld — fråga istället.
 - **Pi 3B+ (edge-nod):** InnoMaker OV5647 CSI-kamera + PIR-sensor HC-SR501 (direkt i GPIO, ingen
   Pico W/MQTT), lokal inferens med kvantiserad TFLite/ONNX-modell
 
+**OS-krav (viktigt vid SKOG-006):** Pi 3B+ måste flashas med **64-bitars** Raspberry Pi OS.
+`ai-edge-litert` (TFLite-interpretern vi använder, se `inference/`) har inga wheels för
+32-bitars ARM — med 32-bitars OS går inferens-containern inte ens att installera. Verifierat
+via PyPI-metadata för `ai-edge-litert==2.2.0`.
+
 ## Dataflöde
 
 1. PIR-sensor känner rörelse

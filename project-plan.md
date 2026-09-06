@@ -45,7 +45,8 @@ Status-nyckel: 🟢 kan börja nu · 🟡 väntar på beroende · ⚪ inte påb�
 
 ### SKOG-006 — Flasha OS 🟡 (väntar på att SD-korten införskaffas)
 - [ ] Flasha Pi 4 (SanDisk Extreme 64GB)
-- [ ] Flasha Pi 3B+ (SanDisk Ultra 64GB)
+- [ ] Flasha Pi 3B+ (SanDisk Ultra 64GB) — **måste vara 64-bitars Raspberry Pi OS**, se
+      OS-kravet i `CLAUDE.md`: `ai-edge-litert` saknar wheels för 32-bitars ARM
 - [ ] Grundläggande SSH-access uppsatt till båda
 - [ ] Fyll i IP/hostname/SSH i `CLAUDE.md`-tabellen
 

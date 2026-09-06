@@ -1,0 +1,104 @@
+name: Build inference container
+
+# SKOG-004 — CI/CD, skiljt från inferens-dataflödet (se CLAUDE.md): den här
+# pipelinen bygger och publicerar containern. Den kör aldrig själva
+# klassificeringen i produktion, det gör Pi 3B+ senare (SKOG-010).
+
+on:
+  push:
+    branches: [main]
+    # Kör bara om koden faktiskt rör inferens-containern eller detta workflow
+    # — annars skulle t.ex. en README-fix trigga ett onödigt ~400MB-bygge.
+    paths:
+      - "inference/**"
+      - ".github/workflows/build-inference.yml"
+  # Manuell "kör nu"-knapp under fliken Actions i GitHub, för felsökning
+  # eller för att testa pipelinen utan att behöva en riktig kodändring.
+  workflow_dispatch: {}
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}/inference
+  # Kaggle-URL:en är verifierad att ge exakt den fil som testades i
+  # SKOG-002/003 (bit-identisk, samma sha256, ingen inloggning krävs).
+  MODEL_URL: https://www.kaggle.com/api/v1/models/tensorflow/mobilenet-v2/tfLite/1-0-224/1/download
+  MODEL_SHA256: 9f3bc29e38e90842a852bfed957dbf5e36f2d97a91dd17736b1e5c0aca8d3303
+
+jobs:
+  build:
+    # arm64-runner (gratis, 4 vCPU för publika repon) — både Macen och Pi 3B+
+    # är arm64, så vi slipper multi-arch-bygge och QEMU-emulering helt.
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checka ut repot
+        uses: actions/checkout@v7
+
+      - name: Hämta modell från Kaggle
+        # Modellfiler ska inte ligga i git-historik (se .gitignore), så CI
+        # hämtar samma fil härifrån istället för att checka in den. sha256-
+        # kontrollen är säkerhetsnätet: om Kaggle någonsin byter ut filen
+        # tyst, failar bygget istället för att skeppa en modell ingen
+        # granskat eller testat mot.
+        run: |
+          curl -sSL -o model.tar.gz "$MODEL_URL"
+          tar -xzf model.tar.gz -C inference/models/
+          echo "$MODEL_SHA256  inference/models/1.tflite" | sha256sum -c -
+
+      - name: Sätt upp Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Beräkna image-taggar
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long
+
+      - name: Bygg image (bara lokalt på runnern än, ingen push)
+        uses: docker/build-push-action@v7
+        with:
+          context: inference
+          tags: ${{ steps.meta.outputs.tags }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test — klassificera en känd testbild
+        # Motsvarar den manuella verifieringen från SKOG-003, fast
+        # automatiserad: kör containern mot en bild med känt facit (2a.jpg
+        # ska klassas som "ibex") och stoppa pipelinen om svaret inte
+        # stämmer. En trasig image (t.ex. fel preprocessing) fastnar här —
+        # den når aldrig registryt och kan därför aldrig hämtas av Pi 3B+.
+        run: |
+          IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
+          OUTPUT=$(docker run --rm "$IMAGE_TAG" test-images/2a.jpg)
+          echo "$OUTPUT"
+          echo "$OUTPUT" | grep -q "1\. ibex" || {
+            echo "Smoke-test misslyckades: förväntade 'ibex' som topp-1-klass"
+            exit 1
+          }
+
+      - name: Logga in på GHCR
+        # GITHUB_TOKEN skapas automatiskt av GitHub Actions för varje
+        # körning — inga egna secrets behöver konfigureras för det här steget.
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pusha till GHCR
+        # Byggs om, men träffar cachen från steget ovan (cache-from: gha)
+        # så det blir snabbt. Separat steg eftersom buildx inte stödjer
+        # load och push samtidigt i samma bygge.
+        uses: docker/build-push-action@v7
+        with:
+          context: inference
+          tags: ${{ steps.meta.outputs.tags }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
