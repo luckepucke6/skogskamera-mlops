@@ -29,10 +29,11 @@ Status-nyckel: 🟢 kan börja nu · 🟡 väntar på beroende · ⚪ inte påb�
 - [x] Verifiera att containern klassar en bild korrekt end-to-end (in: bild, ut: art + konfidens)
 - [x] Håll containern så liten som möjligt (tänk redan nu på Pi 3B+:ans resurser)
 
-### SKOG-004 — CI/CD-workflow 🟡 (väntar på SKOG-003)
-- [ ] GitHub Actions-workflow: bygg containern från SKOG-003
-- [ ] Pusha till ett registry (t.ex. GHCR)
-- [ ] Testa med en dummy-commit att pipelinen faktiskt triggas och lyckas
+### SKOG-004 — CI/CD-workflow ✅
+- [x] GitHub Actions-workflow: bygg containern från SKOG-003
+- [x] Pusha till ett registry (t.ex. GHCR)
+- [x] Testa med en dummy-commit att pipelinen faktiskt triggas och lyckas
+      (behövdes inte separat — själva workflow-commiten triggade första körningen)
 
 ### SKOG-005 — PIR→kamera-triggerlogik 🟢 (oberoende av övriga i spår A)
 - [ ] Skriv triggerlogik i Python med `gpiozero`
