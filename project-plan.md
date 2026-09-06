@@ -19,15 +19,15 @@ Status-nyckel: 🟢 kan börja nu · 🟡 väntar på beroende · ⚪ inte påb�
 ### SKOG-002 — Modell mot bilder 🟢
 - [x] Välj en färdig TFLite- eller ONNX-modell (t.ex. MobileNet SSD, eller sök efter en
       djur/fågel-specifik klassificerare)
-- [ ] Kör modellen mot ett gäng testbilder lokalt på Mac
-- [ ] Notera prestanda/noggrannhet-avvägning — kommer behövas senare för kvantiseringsvalet
-- [ ] Spara ner testbilder du använt (till `inference/test-images/` eller liknande)
+- [x] Kör modellen mot ett gäng testbilder lokalt på Mac
+- [x] Notera prestanda/noggrannhet-avvägning — kommer behövas senare för kvantiseringsvalet
+- [x] Spara ner testbilder du använt (till `inference/test-images/` eller liknande)
 
-### SKOG-003 — Inferens-container 🟡 (väntar på SKOG-002)
-- [ ] Dockerfile i `inference/` som paketerar modell + inferenskod
-- [ ] Bygg och kör lokalt i Docker Desktop
-- [ ] Verifiera att containern klassar en bild korrekt end-to-end (in: bild, ut: art + konfidens)
-- [ ] Håll containern så liten som möjligt (tänk redan nu på Pi 3B+:ans resurser)
+### SKOG-003 — Inferens-container ✅
+- [x] Dockerfile i `inference/` som paketerar modell + inferenskod
+- [x] Bygg och kör lokalt i Docker Desktop
+- [x] Verifiera att containern klassar en bild korrekt end-to-end (in: bild, ut: art + konfidens)
+- [x] Håll containern så liten som möjligt (tänk redan nu på Pi 3B+:ans resurser)
 
 ### SKOG-004 — CI/CD-workflow 🟡 (väntar på SKOG-003)
 - [ ] GitHub Actions-workflow: bygg containern från SKOG-003
