@@ -1,0 +1,17 @@
+# Beroenden för PIR→kamera-triggerlogiken (SKOG-005), separat från
+# inference/requirements.txt. Se CLAUDE.md: edge/ och inference/ ska hållas
+# oberoende av varandra där det går, eftersom Pi 3B+ har begränsade resurser
+# och inte ska dra in beroenden den inte behöver.
+#
+# gpiozero = enkla Python-klasser (MotionSensor, LED, Button, ...) ovanpå
+# GPIO-pinnarna. Den pratar med olika "pin factories" beroende på plattform
+# — på en riktig Pi används RPi.GPIO/lgpio automatiskt, men gpiozero har
+# också en inbyggd MockFactory som låtsas-pinnar utan hårdvara. Det är den
+# vi använder i testerna nedan, vilket gör att den här koden går att
+# utveckla och testa på Mac innan PIR-sensorn ens är kopplad in (SKOG-009).
+gpiozero==2.0.1
+
+# Test-only, men vi håller edge/ till en enda requirements-fil för
+# enkelhets skull (projektet är litet nog att det inte är värt att dela upp
+# i requirements.txt / requirements-dev.txt).
+pytest==8.4.2

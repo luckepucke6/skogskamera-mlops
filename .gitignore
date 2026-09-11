@@ -40,3 +40,8 @@ mlartifacts/
 # --- Bilder/testdata (om de blir stora) ---
 # Avkommentera om test-bildmappen växer sig stor:
 # inference/test-images/
+
+# --- Edge-triggerns infångade bilder (SKOG-005) ---
+# Genereras vid körning (dummybilder på Mac, riktiga bilder på Pi 3B+) —
+# hör inte hemma i git-historik.
+edge/captures/

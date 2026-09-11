@@ -35,10 +35,13 @@ Status-nyckel: 🟢 kan börja nu · 🟡 väntar på beroende · ⚪ inte påb�
 - [x] Testa med en dummy-commit att pipelinen faktiskt triggas och lyckas
       (behövdes inte separat — själva workflow-commiten triggade första körningen)
 
-### SKOG-005 — PIR→kamera-triggerlogik 🟢 (oberoende av övriga i spår A)
-- [ ] Skriv triggerlogik i Python med `gpiozero`
-- [ ] Testa logiken mot en dummybild (ingen riktig GPIO/kamera än)
-- [ ] Definiera var bilden ska hamna och hur den skickas vidare till inferens-steget
+### SKOG-005 — PIR→kamera-triggerlogik ✅
+- [x] Skriv triggerlogik i Python med `gpiozero`
+- [x] Testa logiken mot en dummybild (ingen riktig GPIO/kamera än) — `gpiozero.pins.mock.MockFactory`
+      simulerar PIR-sensorn, `capture_image()` kopierar en testbild från `inference/test-images/`
+- [x] Definiera var bilden ska hamna och hur den skickas vidare till inferens-steget — bilder
+      sparas i `edge/captures/<UTC-tidsstämpel>.jpg`; själva anropet till inferens-containern
+      byggs medvetet inte förrän SKOG-010 (se motivering i `edge/camera_trigger.py`)
 
 ---
 
