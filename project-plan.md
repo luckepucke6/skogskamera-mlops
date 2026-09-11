@@ -47,17 +47,24 @@ Status-nyckel: 🟢 kan börja nu · 🟡 väntar på beroende · ⚪ inte påb�
 
 ## Spår B: Väntar på SD-kort
 
-### SKOG-006 — Flasha OS 🟡 (väntar på att SD-korten införskaffas)
-- [ ] Flasha Pi 4 (SanDisk Extreme 64GB)
-- [ ] Flasha Pi 3B+ (SanDisk Ultra 64GB) — **måste vara 64-bitars Raspberry Pi OS**, se
-      OS-kravet i `CLAUDE.md`: `ai-edge-litert` saknar wheels för 32-bitars ARM
-- [ ] Grundläggande SSH-access uppsatt till båda
-- [ ] Fyll i IP/hostname/SSH i `CLAUDE.md`-tabellen
+### SKOG-006 — Flasha OS ✅
+- [x] Flasha Pi 4 (SanDisk Extreme 64GB) — Raspberry Pi OS Lite (64-bit)
+- [x] Flasha Pi 3B+ (SanDisk Ultra 64GB) — Raspberry Pi OS Lite (64-bit), verifierat `uname -m` →
+      `aarch64` på båda (OS-kravet i CLAUDE.md uppfyllt)
+- [x] Grundläggande SSH-access uppsatt till båda — dedikerat nyckelpar (`~/.ssh/id_ed25519_skogskamera`),
+      ingen lösenordsauth
+- [x] Fyll i IP/hostname/SSH i `CLAUDE.md`-tabellen
 
-### SKOG-007 — Kontrollera termik 🟡 (väntar på SKOG-006)
-- [ ] `vcgencmd measure_temp` på båda under lätt belastning
-- [ ] `vcgencmd get_throttled` — kolla om throttling sker
-- [ ] Besluta om passiv kylfläns behövs (köp bara om det faktiskt throttlar)
+### SKOG-007 — Kontrollera termik ✅ (delvis — se not)
+- [x] `vcgencmd measure_temp` på båda — 39.9°C (Pi 4) / 41.9°C (Pi 3B+), men bara i viloläge
+      direkt efter boot, inte under belastning. Kör om när Pi 4 faktiskt kör k3s+MLflow+
+      Prometheus+Grafana (SKOG-008) och när Pi 3B+ kör riktig inferens (SKOG-010).
+- [x] `vcgencmd get_throttled` — Pi 3B+ helt rent (`0x0`). Pi 4 visar `0x50000`: INTE throttlad
+      just nu, men under-voltage/throttling har inträffat en gång sedan boot (troligen
+      strömkällan/kabeln vid första uppstart) — se detaljer i CLAUDE.md-tabellen, håll koll
+      igen under verklig last.
+- [x] Beslut: ingen passiv kylfläns köps in nu — inget aktivt throttlar. Omvärderas om
+      `throttled` visar bit 0/2 (pågående) under verklig last senare.
 
 ### SKOG-008 — Control plane på Pi 4 🟡 (väntar på SKOG-006)
 - [ ] Installera k3s

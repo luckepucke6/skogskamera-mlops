@@ -14,15 +14,25 @@ nedskalad till Raspberry Pi-hårdvara.
 
 | Nod | Hårdvara | Roll | Hostname | IP | SSH |
 |---|---|---|---|---|---|
-| Pi 4 | Raspberry Pi 4 Model B (2018) | Control plane | TBD | TBD | TBD |
-| Pi 3B+ | Raspberry Pi 3 Model B+ (2017) | Edge-nod | TBD | TBD | TBD |
+| Pi 4 | Raspberry Pi 4 Model B (2018) | Control plane | `skog-pi4` | 192.168.1.86 (DHCP, ej reserverad) | `ssh -i ~/.ssh/id_ed25519_skogskamera skog@skog-pi4.local` |
+| Pi 3B+ | Raspberry Pi 3 Model B+ (2017) | Edge-nod | `skog-pi3` | 192.168.1.88 (DHCP, ej reserverad) | `ssh -i ~/.ssh/id_ed25519_skogskamera skog@skog-pi3.local` |
 
-SD-kort: SanDisk Extreme 64GB A2/U3 → Pi 4. SanDisk Ultra 64GB A1 → Pi 3B+.
+SD-kort: SanDisk Extreme 64GB A2/U3 → Pi 4. SanDisk Ultra 64GB A1 → Pi 3B+. Båda flashade med
+Raspberry Pi OS Lite (64-bit, Debian trixie) via Raspberry Pi Imager, headless (SSH-nyckel,
+ingen lösenordsauth). Verifierat `uname -m` → `aarch64` på båda.
+
+IP:erna ovan är DHCP-tilldelade och kan ändras vid omstart av routern — använd hellre
+`.local`-hostnamnen (mDNS/Bonjour) i kommandon och config där det går. Om Pi 3B+ ska prata med
+Pi 4 över en fast adress (SKOG-011) bör IP:erna reserveras i routern innan dess.
+
 Ingen aktiv kylning inledningsvis — kontrollera `vcgencmd measure_temp` och `vcgencmd get_throttled`
-innan ev. passiv kylfläns köps in.
-
-**OBS:** Rader ovan är platshållare tills SD-korten är flashade. Föreslå inga SSH-kommandon mot
-riktiga IP:er förrän den här tabellen är ifylld — fråga istället.
+innan ev. passiv kylfläns köps in. Status vid SKOG-007 (första kontroll efter flashning):
+- Pi 3B+: 41.9°C, `throttled=0x0` — helt rent.
+- Pi 4: 39.9°C, `throttled=0x50000` — inte throttlad just nu (bit 0/2 av), men bit 16+18 visar
+  att under-voltage och throttling INTRÄFFAT någon gång sedan boot (troligen strömadaptern/
+  kabeln vid första uppstarten). Håll koll på det här igen när Pi 4 kör k3s + MLflow +
+  Prometheus + Grafana samtidigt — om `throttled` växer med bit 0/2 satta under riktig last
+  behövs en bättre 5V/3A-strömkälla eller kortare/tjockare USB-C-kabel.
 
 ## Arkitektur
 
