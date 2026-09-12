@@ -36,8 +36,10 @@ inte adaptern, först.**
 ## Arkitektur
 
 - **Pi 4 (control plane):** k3s, MLflow (model registry), Prometheus + Grafana (monitoring)
-- **Pi 3B+ (edge-nod):** InnoMaker OV5647 CSI-kamera + PIR-sensor HC-SR501 (direkt i GPIO, ingen
-  Pico W/MQTT), lokal inferens med kvantiserad TFLite/ONNX-modell
+- **Pi 3B+ (edge-nod):** InnoMaker OV5647 CSI-kamera, lokal inferens med kvantiserad TFLite/ONNX-
+  modell. Rörelse upptäcks genom bildjämförelse (picamera2), inte PIR-sensor — lådan står bakom
+  fönsterglas som blockerar PIR:ens IR-signal (HC-SR501 testades och fungerar, se SKOG-009, men
+  ersattes i SKOG-010).
 
 **OS-krav (viktigt vid SKOG-006):** Pi 3B+ måste flashas med **64-bitars** Raspberry Pi OS.
 `ai-edge-litert` (TFLite-interpretern vi använder, se `inference/`) har inga wheels för
@@ -71,8 +73,8 @@ k3s (v1.36.4+k3s1) + MLflow + Prometheus + Grafana kör och svarar. Manifest i `
 
 ## Dataflöde
 
-1. PIR-sensor känner rörelse
-2. Kameran tar en stillbild
+1. Kameran upptäcker rörelse genom att jämföra bilder (`edge/camera_trigger.py`)
+2. En bild i full upplösning sparas
 3. TFLite-modellen på Pi 3B+ klassar innehållet
 4. Resultat (art, konfidens, tid, bild) skickas till Pi 4 → loggas i MLflow, exponeras som
    Prometheus-metrics
@@ -87,7 +89,7 @@ modellversion. Håll isär detta flöde från inferens-dataflödet i kod och i d
 
 ```
 .github/workflows/          CI/CD-pipelines
-edge/                       PIR + kamera-triggerlogik, körs på Pi 3B+
+edge/                       kamera-triggerlogik (bildjämförelse), körs på Pi 3B+
 inference/                  modell + Dockerfile för inferenscontainer
 infra/k3s/                  setup-pi4.sh — cgroup-fix + k3s-installation
 infra/MLflow/               mlflow.yaml (k3s-manifest)
@@ -104,12 +106,12 @@ katalog där — skapa aldrig båda, det ger förvirring så fort någon klonar 
 1. Testa en färdig TFLite/ONNX-modell mot bilder
 2. Bygg och testa inferens-containern i Docker Desktop
 3. GitHub Actions-workflow (bygg + push till registry)
-4. PIR→kamera-triggerlogik i Python (`gpiozero`), testad mot en dummybild — ingen riktig GPIO än
+4. Kamera-triggerlogik i Python (bildjämförelse, `numpy`/`Pillow`), testad mot testbilder
 
 **Väntar på SD-kort:**
 - Flasha OS på båda Pi:sarna
 - k3s + MLflow + Prometheus + Grafana på Pi 4
-- Fysisk montering av kamera + PIR på Pi 3B+
+- Fysisk montering av kamera på Pi 3B+ (PIR testades men ersattes, se Arkitektur)
 - Fullt integrationstest end-to-end
 
 Om en uppgift tillhör steg 2 (väntar på SD-kort) och SD-korten inte är flashade än — säg det,
@@ -131,7 +133,7 @@ fungerande. **Kommentarer ska vara korta: 1-3 rader, inte långa.**
 - Kommentera **varför**, inte bara vad — särskilt MLOps-koncept (t.ex. varför kvantisering
   behövs, varför model registry skiljer sig från att spara en fil, vad en k3s-manifest-nyckel gör).
 - Förklara okända bibliotek/mönster kort (1-3 rader) första gången de dyker upp i koden
-  (t.ex. `gpiozero`, MLflow:s `log_metric` vs `log_artifact`, Docker multi-stage builds).
+  (t.ex. `picamera2`, MLflow:s `log_metric` vs `log_artifact`, Docker multi-stage builds).
 - Vid icke-triviala designval: motivera kort i svaret också (inte bara i koden) varför du valde
   en lösning framför en annan.
 - Flagga förenklingar mot en riktig produktionsmiljö (t.ex. ingen autentisering, hårdkodade

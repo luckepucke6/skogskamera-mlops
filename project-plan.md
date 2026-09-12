@@ -35,10 +35,12 @@ Status-nyckel: 🟢 kan börja nu · 🟡 väntar på beroende · ⚪ inte påb�
 - [x] Testa med en dummy-commit att pipelinen faktiskt triggas och lyckas
       (behövdes inte separat — själva workflow-commiten triggade första körningen)
 
-### SKOG-005 — PIR→kamera-triggerlogik ✅
+### SKOG-005 — PIR→kamera-triggerlogik ✅ (ersatt i SKOG-010 — se not)
 - [x] Skriv triggerlogik i Python med `gpiozero`
 - [x] Testa mot en dummybild — `gpiozero.pins.mock.MockFactory` simulerar PIR-sensorn
 - [x] Bilder sparas i `edge/captures/<UTC-tidsstämpel>.jpg`; anrop till inferens-containern byggs i SKOG-010
+- **Ersatt:** lådan står bakom fönsterglas som blockerar PIR:ens IR-signal — bytt mot
+  bildbaserad rörelsedetektering, se SKOG-010.
 
 ---
 
@@ -78,11 +80,13 @@ blir trängre när SKOG-011 lägger till riktigt dataflöde.
 
 ### SKOG-009 — Fysisk montering Pi 3B+ ✅
 - [x] Montera InnoMaker OV5647-kameran
-- [x] Koppla PIR HC-SR501 i GPIO
+- [x] Koppla PIR HC-SR501 i GPIO (ersatt i SKOG-010 — lådan står bakom fönsterglas, PIR ser inte IR genom glas)
 - [x] Verifiera att kameran kan ta en bild via kommandorad — `rpicam-still`, bild bekräftad skarp
 - [x] Verifiera att PIR-sensorn triggar en signal du kan läsa av — `pinctrl get 4`, lo→hi vid rörelse bekräftat
 
 ### SKOG-010 — Deploya edge-koden på Pi 3B+ 🟡 (väntar på SKOG-005 + SKOG-009)
+- [x] Skriv om triggern till bildjämförelse (`picamera2`) — PIR fungerar inte bakom fönsterglas
+- [x] Verifiera riktig rörelsedetektering vid fönstret — 8 bilder sparade, verklig rörelse bekräftad visuellt
 - [ ] Flytta över triggerlogik + inferens-container till Pi 3B+
 - [ ] Kör en riktig lokal inferens (inte dummybild) på Pi 3B+
 - [ ] Mät prestanda (hur lång tid tar en inferens på riktig hårdvara?)

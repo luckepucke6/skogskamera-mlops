@@ -1,9 +1,7 @@
-# Beroenden för edge/ (PIR→kamera). Hålls separat från inference/requirements.txt
-# för att inte dra in onödiga paket på Pi 3B+.
+# Beroenden för edge/-testerna på Mac. Hålls separat från inference/requirements.txt.
 #
-# gpiozero = enkla klasser ovanpå GPIO-pinnarna. Har en inbyggd MockFactory
-# med låtsas-pinnar, vilket gör att koden går att testa på Mac utan hårdvara.
-gpiozero==2.0.1
-
-# Test-only, men vi håller allt i en fil eftersom projektet är litet.
+# På Pi:n installeras numpy/Pillow via apt-paketet python3-picamera2 istället —
+# den här filen är bara för Mac (ingen kamerahårdvara här).
+numpy==2.5.2
+pillow==12.3.0
 pytest==8.4.2
