@@ -1,0 +1,122 @@
+# infra/MLflow/mlflow.yaml — MLflow (model registry + experiment tracking).
+#
+# "---" separerar flera Kubernetes-dokument i samma fil — bara en läsbarhets-genväg. En fil
+# per app (mlflow/prometheus/grafana) istället för en jättefil.
+#
+# Applicera med: kubectl apply -f infra/MLflow/mlflow.yaml
+
+# Namespace = namnrymd i klustret, grupperar resurser som hör ihop. Utan eget namespace
+# hamnar allt i "default" — blir rörigt när fler appar (Prometheus, Grafana) tillkommer.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mlflow
+---
+# PersistentVolumeClaim = lagring som överlever om poden startas om — annars försvinner
+# SQLite-databasen och artefakterna vid varje omstart, som i en vanlig container.
+# k3s StorageClass "local-path" är standard, så storageClassName behövs inte här.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlflow-data
+  namespace: mlflow
+spec:
+  accessModes:
+    - ReadWriteOnce # bara EN pod kan montera volymen samtidigt — gott nog för en replica.
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow
+  namespace: mlflow
+spec:
+  replicas: 1
+  # Recreate istället för RollingUpdate: med ReadWriteOnce-PVC kan inte två poddar montera
+  # volymen samtidigt. Recreate stänger den gamla poden helt innan den nya startar.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: mlflow
+  template:
+    metadata:
+      labels:
+        app: mlflow
+    spec:
+      containers:
+        - name: mlflow
+          image: ghcr.io/mlflow/mlflow:v3.16.0 # pinnad version, se CLAUDE.md om varför.
+          # Imagen har bara CMD ["python3"], ingen ENTRYPOINT, så "command" ersätter den utan
+          # konflikt (jfr inference/Dockerfile som medvetet använder ENTRYPOINT, se den filen).
+          command:
+            - mlflow
+            - server
+            - --host=0.0.0.0
+            - --port=5000
+            # --workers=1: fler gunicorn-workers kan ge "database is locked" mot SQLite vid
+            # samtidiga skrivningar. En edge-nod som loggar med några sekunders mellanrum
+            # behöver ingen extra genomströmning — sparar dessutom RAM.
+            - --workers=1
+            # FÖRENKLING: SQLite är en fil, inte en databasserver — i produktion hade Postgres
+            # körts i egen pod. Här räcker det: en nod, få writes i minuten.
+            - --backend-store-uri=sqlite:////mlflow/mlflow.db
+            # --artifacts-destination: MLflow proxar artefakt-uppladdningar via sitt HTTP-API
+            # istället för delat filsystem — Pi 3B+ kan skicka bilder via HTTP, ingen NFS/S3 behövs.
+            - --artifacts-destination=/mlflow/artifacts
+          # MLflow har inbyggt DNS-rebinding-skydd: avvisar requests där Host-headern inte är
+          # "localhost" eller ett privat IP. Klienter som pratar via "skog-pi4.local" nekas annars.
+          #
+          # FÖRENKLING: allowed_hosts=["*"] stänger av skyddet helt. Rimligt på ett hemmanätverk
+          # med en betrodd edge-nod — i produktion hade man listat exakta tillåtna hostnamn.
+          env:
+            - name: MLFLOW_SERVER_ALLOWED_HOSTS
+              value: "*"
+          ports:
+            - containerPort: 5000
+          volumeMounts:
+            - name: data
+              mountPath: /mlflow
+          # readinessProbe: Kubernetes HTTP-frågar "redo för trafik?" och skickar ingen trafik
+          # hit förrän svaret är OK — viktigt medan MLflow initierar SQLite-databasen vid start.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            # MLflows uppstart (SQLite-tabeller, FastAPI/uvicorn) kan ta mer än några sekunder
+            # på en Pi. initialDelaySeconds=15 och timeoutSeconds=3 undviker onödiga
+            # "Unhealthy"-loggar under normal uppstart.
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+          # requests = garanterat minne (för schemaläggning). limits = tak — över det blir
+          # poden OOMKilled och startas om. Bara 4 GB RAM på Pi 4 delas mellan flera tjänster.
+          #
+          # UPPMÄTT: 1Gi och 1536Mi räckte inte, MLflow blev OOMKilled vid uppstart. 2Gi funkade.
+          resources:
+            requests:
+              memory: "256Mi"
+            limits:
+              memory: "2Gi"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mlflow-data
+---
+# Service = fast adress för podden (pod-IP:n byter vid omstart, Service-adressen består).
+# LoadBalancer: i molnet ger det en extern IP, i k3s binder ServiceLB porten på nodens IP
+# → nåbar på skog-pi4.local:5000.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow
+  namespace: mlflow
+spec:
+  type: LoadBalancer
+  selector:
+    app: mlflow
+  ports:
+    - port: 5000
+      targetPort: 5000

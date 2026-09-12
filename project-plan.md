@@ -37,11 +37,8 @@ Status-nyckel: 🟢 kan börja nu · 🟡 väntar på beroende · ⚪ inte påb�
 
 ### SKOG-005 — PIR→kamera-triggerlogik ✅
 - [x] Skriv triggerlogik i Python med `gpiozero`
-- [x] Testa logiken mot en dummybild (ingen riktig GPIO/kamera än) — `gpiozero.pins.mock.MockFactory`
-      simulerar PIR-sensorn, `capture_image()` kopierar en testbild från `inference/test-images/`
-- [x] Definiera var bilden ska hamna och hur den skickas vidare till inferens-steget — bilder
-      sparas i `edge/captures/<UTC-tidsstämpel>.jpg`; själva anropet till inferens-containern
-      byggs medvetet inte förrän SKOG-010 (se motivering i `edge/camera_trigger.py`)
+- [x] Testa mot en dummybild — `gpiozero.pins.mock.MockFactory` simulerar PIR-sensorn
+- [x] Bilder sparas i `edge/captures/<UTC-tidsstämpel>.jpg`; anrop till inferens-containern byggs i SKOG-010
 
 ---
 
@@ -49,35 +46,41 @@ Status-nyckel: 🟢 kan börja nu · 🟡 väntar på beroende · ⚪ inte påb�
 
 ### SKOG-006 — Flasha OS ✅
 - [x] Flasha Pi 4 (SanDisk Extreme 64GB) — Raspberry Pi OS Lite (64-bit)
-- [x] Flasha Pi 3B+ (SanDisk Ultra 64GB) — Raspberry Pi OS Lite (64-bit), verifierat `uname -m` →
-      `aarch64` på båda (OS-kravet i CLAUDE.md uppfyllt)
-- [x] Grundläggande SSH-access uppsatt till båda — dedikerat nyckelpar (`~/.ssh/id_ed25519_skogskamera`),
-      ingen lösenordsauth
+- [x] Flasha Pi 3B+ (SanDisk Ultra 64GB) — Raspberry Pi OS Lite (64-bit), `uname -m` → `aarch64` på båda
+- [x] SSH-access uppsatt till båda — dedikerat nyckelpar (`~/.ssh/id_ed25519_skogskamera`), ingen lösenordsauth
 - [x] Fyll i IP/hostname/SSH i `CLAUDE.md`-tabellen
 
 ### SKOG-007 — Kontrollera termik ✅ (delvis — se not)
-- [x] `vcgencmd measure_temp` på båda — 39.9°C (Pi 4) / 41.9°C (Pi 3B+), men bara i viloläge
-      direkt efter boot, inte under belastning. Kör om när Pi 4 faktiskt kör k3s+MLflow+
-      Prometheus+Grafana (SKOG-008) och när Pi 3B+ kör riktig inferens (SKOG-010).
-- [x] `vcgencmd get_throttled` — Pi 3B+ helt rent (`0x0`). Pi 4 visar `0x50000`: INTE throttlad
-      just nu, men under-voltage/throttling har inträffat en gång sedan boot (troligen
-      strömkällan/kabeln vid första uppstart) — se detaljer i CLAUDE.md-tabellen, håll koll
-      igen under verklig last.
-- [x] Beslut: ingen passiv kylfläns köps in nu — inget aktivt throttlar. Omvärderas om
-      `throttled` visar bit 0/2 (pågående) under verklig last senare.
+- [x] `vcgencmd measure_temp` — 39.9°C (Pi 4) / 41.9°C (Pi 3B+) i viloläge, kör om under belastning (SKOG-008/010)
+- [x] `vcgencmd get_throttled` — Pi 3B+ rent (`0x0`). Pi 4 visar `0x50000`: inte throttlad nu, men har hänt en gång
+- [x] Beslut: ingen passiv kylfläns nu. Omvärderas om `throttled` visar pågående throttling under last
+- **UPPFÖLJNING (2026-09-11 → löst 2026-09-12):** under-voltage inträffade under verklig last (k3s-uppstart),
+  orsak en e-markerad USB-C-kabel. Löst med vanlig kabel, `throttled=0x0` sedan.
 
-### SKOG-008 — Control plane på Pi 4 🟡 (väntar på SKOG-006)
-- [ ] Installera k3s
-- [ ] Installera/deploya MLflow
-- [ ] Installera/deploya Prometheus
-- [ ] Installera/deploya Grafana
-- [ ] Verifiera att alla tjänster svarar (basic health check, inget dataflöde än)
+### SKOG-008 — Control plane på Pi 4 ✅
+- [x] Installera k3s — `infra/k3s/setup-pi4.sh`, k3s v1.36.4+k3s1, cgroup v2/memory-fix
+- [x] Installera/deploya MLflow — `infra/MLflow/mlflow.yaml`
+- [x] Installera/deploya Prometheus — `infra/monitoring/prometheus.yaml`
+- [x] Installera/deploya Grafana — `infra/monitoring/grafana.yaml`
+- [x] Verifiera att alla tjänster svarar — `:5000/health`, `:9090/-/healthy`, `:3000/api/health` alla `HTTP 200`,
+      end-to-end-test från Macen till MLflow bekräftat
 
-### SKOG-009 — Fysisk montering Pi 3B+ 🟡 (väntar på SKOG-006)
-- [ ] Montera InnoMaker OV5647-kameran
-- [ ] Koppla PIR HC-SR501 i GPIO
-- [ ] Verifiera att kameran kan ta en bild via kommandorad
-- [ ] Verifiera att PIR-sensorn triggar en signal du kan läsa av
+**Problem som dök upp och hur de löstes:**
+1. Brownout under last → löst med ny USB-C-kabel (se SKOG-007-uppföljningen).
+2. Korrupt containerd-cache efter brownout-krascherna → raderade `/var/lib/rancher/k3s/agent/containerd`
+   (bara image-cache, inte serverdata) och lät allt laddas om.
+3. MLflow 3.x OOMKilled vid uppstart (minnestopp ~1.6 GB) → höjde `limits.memory` till 2Gi.
+4. MLflow 3.x avvisade requests via hostnamn (DNS-rebinding-skydd) → satte
+   `MLFLOW_SERVER_ALLOWED_HOSTS=*`, flaggad förenkling i CLAUDE.md.
+
+**Att hålla koll på framöver:** minnesbudgeten är trång (~3Gi `limits.memory` av 3.8 GB totalt). Fungerar idag,
+blir trängre när SKOG-011 lägger till riktigt dataflöde.
+
+### SKOG-009 — Fysisk montering Pi 3B+ ✅
+- [x] Montera InnoMaker OV5647-kameran
+- [x] Koppla PIR HC-SR501 i GPIO
+- [x] Verifiera att kameran kan ta en bild via kommandorad — `rpicam-still`, bild bekräftad skarp
+- [x] Verifiera att PIR-sensorn triggar en signal du kan läsa av — `pinctrl get 4`, lo→hi vid rörelse bekräftat
 
 ### SKOG-010 — Deploya edge-koden på Pi 3B+ 🟡 (väntar på SKOG-005 + SKOG-009)
 - [ ] Flytta över triggerlogik + inferens-container till Pi 3B+

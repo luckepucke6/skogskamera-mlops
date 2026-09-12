@@ -25,14 +25,13 @@ IP:erna ovan är DHCP-tilldelade och kan ändras vid omstart av routern — anv�
 `.local`-hostnamnen (mDNS/Bonjour) i kommandon och config där det går. Om Pi 3B+ ska prata med
 Pi 4 över en fast adress (SKOG-011) bör IP:erna reserveras i routern innan dess.
 
-Ingen aktiv kylning inledningsvis — kontrollera `vcgencmd measure_temp` och `vcgencmd get_throttled`
-innan ev. passiv kylfläns köps in. Status vid SKOG-007 (första kontroll efter flashning):
-- Pi 3B+: 41.9°C, `throttled=0x0` — helt rent.
-- Pi 4: 39.9°C, `throttled=0x50000` — inte throttlad just nu (bit 0/2 av), men bit 16+18 visar
-  att under-voltage och throttling INTRÄFFAT någon gång sedan boot (troligen strömadaptern/
-  kabeln vid första uppstarten). Håll koll på det här igen när Pi 4 kör k3s + MLflow +
-  Prometheus + Grafana samtidigt — om `throttled` växer med bit 0/2 satta under riktig last
-  behövs en bättre 5V/3A-strömkälla eller kortare/tjockare USB-C-kabel.
+Ingen aktiv kylning — `vcgencmd measure_temp`/`get_throttled` har inte visat behov av kylfläns.
+
+**Strömförsörjning — VIKTIGT (SKOG-007/008):** Pi 4 startade om spontant under-voltage när k3s
++ containerd drog igång (`throttled=0x50005`). Orsak: en e-markerad USB-C-kabel — Pi 4 har en
+känd CC-pin-hårdvarubugg som gör den känslig för sådana kablar. Löst med en vanlig,
+icke-e-markerad kabel (`throttled=0x0` sedan). **Vid underspänning igen: misstänk kabeln,
+inte adaptern, först.**
 
 ## Arkitektur
 
@@ -44,6 +43,31 @@ innan ev. passiv kylfläns köps in. Status vid SKOG-007 (första kontroll efter
 `ai-edge-litert` (TFLite-interpretern vi använder, se `inference/`) har inga wheels för
 32-bitars ARM — med 32-bitars OS går inferens-containern inte ens att installera. Verifierat
 via PyPI-metadata för `ai-edge-litert==2.2.0`.
+
+## Control plane på Pi 4 (SKOG-008)
+
+k3s (v1.36.4+k3s1) + MLflow + Prometheus + Grafana kör och svarar. Manifest i `infra/`
+(se Mappstruktur). Inget dataflöde från edge-noden än — det är SKOG-011.
+
+- **kubectl från Macen:** `export KUBECONFIG=~/.kube/skogskamera.yaml` (separat fil, inte
+  merge:ad i `~/.kube/config`). Pekar på IPv4 direkt (`https://192.168.1.86:6443`) med
+  `tls-server-name: skog-pi4.local`, INTE `https://skog-pi4.local:6443` — mDNS ger både A- och
+  AAAA-post, och Go:s HTTP-klient väljer ibland IPv6, som timeoutar. Blir kubectl
+  långsamt/instabilt igen: misstänk detta först.
+- **Tjänster:** `http://skog-pi4.local:5000` (MLflow), `:9090` (Prometheus), `:3000` (Grafana,
+  `admin` + lösenord satt via `kubectl create secret generic grafana-admin -n monitoring
+  --from-literal=admin-password=...` — står INTE i git, fråga i chatten om det behövs igen).
+- **Ingen autentisering på MLflow/Prometheus**, **`MLFLOW_SERVER_ALLOWED_HOSTS=*`** i
+  `infra/MLflow/mlflow.yaml`: MLflow 3.x har ett DNS-rebinding-skydd som annars avvisar
+  requests via hostnamn. Medveten förenkling för ett hemmanätverk, se kommentar i manifestet.
+- **MLflow behöver minst 2Gi minnesgräns** — mindre (1Gi, 1536Mi) gav OOMKilled vid uppstart
+  (FastAPI/uvicorn-import + SQLite-migrering toppar ~1.6 GB, sjunker sedan kraftigt).
+- Konstiga containerfel efter brownout/oplanerad omstart → misstänk korrupt containerd-cache,
+  inte konfigurationen. Fix: stoppa k3s, radera `/var/lib/rancher/k3s/agent/containerd` (bara
+  image-cache, INTE serverdata i `/var/lib/rancher/k3s/server`), starta k3s igen.
+- **Minnesbudget är trång:** `limits.memory` summerar till ~3Gi (MLflow 2Gi + Prometheus
+  512Mi + Grafana 512Mi) på en Pi 4 med 3.8 GB totalt. Fungerar idag, men blir trängre när
+  SKOG-011 lägger till riktigt dataflöde — håll koll med `kubectl top pods -A`.
 
 ## Dataflöde
 
@@ -62,12 +86,17 @@ modellversion. Håll isär detta flöde från inferens-dataflödet i kod och i d
 ## Mappstruktur
 
 ```
-.github/workflows/   CI/CD-pipelines
-edge/                PIR + kamera-triggerlogik, körs på Pi 3B+
-inference/            modell + Dockerfile för inferenscontainer
-infra/                k3s-manifest, Prometheus/Grafana-config
-MLflow/               MLflow-relaterad config/setup
+.github/workflows/          CI/CD-pipelines
+edge/                       PIR + kamera-triggerlogik, körs på Pi 3B+
+inference/                  modell + Dockerfile för inferenscontainer
+infra/k3s/                  setup-pi4.sh — cgroup-fix + k3s-installation
+infra/MLflow/               mlflow.yaml (k3s-manifest)
+infra/monitoring/           prometheus.yaml, grafana.yaml (k3s-manifest)
 ```
+
+(Notera versaliseringen `MLflow/` — konsekvent skiftläge, matchar den mapp SKOG-001 redan
+skapade. macOS eget filsystem är skiftlägesokänsligt så `mlflow/` och `MLflow/` är SAMMA
+katalog där — skapa aldrig båda, det ger förvirring så fort någon klonar på Linux.)
 
 ## Byggordning — respektera denna, hoppa inte i ordning
 
@@ -96,22 +125,17 @@ föreslå inte att simulera eller hoppa över.
 
 ## Kodstil: pedagogisk, inte bara produktionsmässig
 
-Det här projektet drivs för att lära sig, inte bara för att bli klart — användaren är inte
-erfaren utvecklare och vill förstå koden medan den skrivs, inte bara ha den fungerande.
+Lärprojekt — användaren är inte erfaren utvecklare och vill förstå koden, inte bara ha den
+fungerande. **Kommentarer ska vara korta: 1-3 rader, inte långa.**
 
-- Kommentera **varför**, inte bara vad — särskilt vid MLOps-specifika koncept
-  (t.ex. varför kvantisering behövs, varför model registry skiljer sig från att bara spara en
-  fil, varför Prometheus-metrics är strukturerade som de är, vad en k3s-manifest-nyckel gör).
-- Förklara okända bibliotek/mönster första gången de dyker upp i koden (t.ex. `gpiozero`,
-  MLflow:s `log_metric` vs `log_artifact`, Docker multi-stage builds) — en rad eller två räcker,
-  behöver inte vara en föreläsning.
-- Vid icke-triviala designval: säg gärna kort i svaret (inte bara i koden) *varför* du valde en
-  lösning framför en annan, särskilt om det finns ett enklare men sämre alternativ.
-- Prioritera läsbarhet över kompakthet — hellre några extra rader som är tydliga än en tät
-  one-liner, även om det är "produktionsstandard" att skriva kortare.
-- Om något är en förenkling jämfört med hur det skulle göras i en riktig produktionsmiljö
-  (t.ex. ingen autentisering mellan noderna, hårdkodade trösklar) — flagga det i en kommentar,
-  så användaren vet vad som är en medveten avvägning och inte en miss.
+- Kommentera **varför**, inte bara vad — särskilt MLOps-koncept (t.ex. varför kvantisering
+  behövs, varför model registry skiljer sig från att spara en fil, vad en k3s-manifest-nyckel gör).
+- Förklara okända bibliotek/mönster kort (1-3 rader) första gången de dyker upp i koden
+  (t.ex. `gpiozero`, MLflow:s `log_metric` vs `log_artifact`, Docker multi-stage builds).
+- Vid icke-triviala designval: motivera kort i svaret också (inte bara i koden) varför du valde
+  en lösning framför en annan.
+- Flagga förenklingar mot en riktig produktionsmiljö (t.ex. ingen autentisering, hårdkodade
+  trösklar) med en kort kommentar, så det syns att det är medvetet och inte en miss.
 
 ## Tidigare projekt att återanvända från
 

@@ -1,8 +1,7 @@
 name: Build inference container
 
-# SKOG-004 — CI/CD, skiljt från inferens-dataflödet (se CLAUDE.md): den här
-# pipelinen bygger och publicerar containern. Den kör aldrig själva
-# klassificeringen i produktion, det gör Pi 3B+ senare (SKOG-010).
+# CI/CD, skiljt från inferens-dataflödet: bygger och publicerar containern,
+# kör aldrig själva klassificeringen (det gör Pi 3B+).
 
 on:
   push:
@@ -18,8 +17,8 @@ on:
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository }}/inference
-  # Kaggle-URL:en är verifierad att ge exakt den fil som testades i
-  # SKOG-002/003 (bit-identisk, samma sha256, ingen inloggning krävs).
+  # Kaggle-URL:t är verifierat att ge exakt samma fil (sha256) som testades
+  # tidigare, utan inloggning.
   MODEL_URL: https://www.kaggle.com/api/v1/models/tensorflow/mobilenet-v2/tfLite/1-0-224/1/download
   MODEL_SHA256: 9f3bc29e38e90842a852bfed957dbf5e36f2d97a91dd17736b1e5c0aca8d3303
 
@@ -36,11 +35,8 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Hämta modell från Kaggle
-        # Modellfiler ska inte ligga i git-historik (se .gitignore), så CI
-        # hämtar samma fil härifrån istället för att checka in den. sha256-
-        # kontrollen är säkerhetsnätet: om Kaggle någonsin byter ut filen
-        # tyst, failar bygget istället för att skeppa en modell ingen
-        # granskat eller testat mot.
+        # Modellfiler ligger inte i git (se .gitignore) — CI hämtar dem här istället.
+        # sha256-kontrollen stoppar bygget om Kaggle någonsin byter ut filen tyst.
         run: |
           curl -sSL -o model.tar.gz "$MODEL_URL"
           tar -xzf model.tar.gz -C inference/models/
@@ -68,11 +64,9 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Smoke-test — klassificera en känd testbild
-        # Motsvarar den manuella verifieringen från SKOG-003, fast
-        # automatiserad: kör containern mot en bild med känt facit (2a.jpg
-        # ska klassas som "ibex") och stoppa pipelinen om svaret inte
-        # stämmer. En trasig image (t.ex. fel preprocessing) fastnar här —
-        # den når aldrig registryt och kan därför aldrig hämtas av Pi 3B+.
+        # Kör containern mot en bild med känt facit (2a.jpg ska ge "ibex") och
+        # stoppar pipelinen om svaret inte stämmer — en trasig image når då
+        # aldrig registryt.
         run: |
           IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
           OUTPUT=$(docker run --rm "$IMAGE_TAG" test-images/2a.jpg)

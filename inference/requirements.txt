@@ -1,10 +1,7 @@
-# Beroenden för att testa och köra inferens lokalt (SKOG-002/003).
+# Beroenden för att köra inferens lokalt.
 #
-# ai-edge-litert = TFLite-interpretern. Vi använder INTE fulla `tensorflow`-
-# paketet: det är flera GB stort och drar in en massa vi inte behöver bara
-# för att köra en färdig .tflite-modell. ai-edge-litert är Googles aktuella
-# lättviktspaket för just detta — samma sak vi kommer vilja ha på Pi 3B+,
-# där lagringsutrymme och minne är begränsat.
+# ai-edge-litert = TFLite-interpretern. Vi använder inte fulla tensorflow
+# (flera GB) — den här är Googles lättviktspaket, samma vi vill ha på Pi 3B+.
 ai-edge-litert==2.2.0
 numpy==2.5.2
 pillow==12.3.0

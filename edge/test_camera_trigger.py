@@ -1,18 +1,6 @@
 """
-edge/test_camera_trigger.py — testar trigger-logiken UTAN riktig GPIO/kamera.
-
-Körs på Mac, ingen Pi krävs. Två saker testas separat, i tur och ordning
-efter hur pipelinen faktiskt ser ut:
-
-1. capture_image() — sparar den (simulerade) kameran faktiskt en bildfil?
-2. build_sensor() — reagerar PIR-kopplingen på ett rörelse-event genom att
-   anropa capture-funktionen?
-
-gpiozero har ett inbyggt sätt att testa PIR/LED/knapp-kod utan hårdvara:
-MockFactory. Istället för att prata med riktiga GPIO-pinnar via RPi.GPIO/
-lgpio (vilket kräver att man kör på en Pi) skapar den låtsas-pinnar man kan
-styra manuellt från testkoden (`pin.drive_high()` / `pin.drive_low()`) —
-ungefär som att fysiskt koppla PIR-sensorns utgång till en spänning.
+Testar trigger-logiken utan riktig GPIO/kamera, körs på Mac.
+MockFactory ger låtsas-GPIO-pinnar (drive_high/drive_low) istället för hårdvara.
 """
 
 import time
@@ -28,10 +16,8 @@ from camera_trigger import PIR_GPIO_PIN, build_sensor, capture_image
 @pytest.fixture(autouse=True)
 def mock_gpio():
     """
-    Byter ut gpiozero:s pin factory mot MockFactory för varje test, och
-    städar upp igen efteråt. Utan den här bytas skulle gpiozero försöka
-    prata med riktig GPIO-hårdvara vid import/körning — vilket kraschar
-    direkt på en Mac (ingen sådan hårdvara finns).
+    Byter till MockFactory per test. Utan den kraschar gpiozero direkt på
+    Mac, den försöker prata med riktig GPIO-hårdvara som inte finns.
     """
     Device.pin_factory = MockFactory()
     yield
@@ -48,9 +34,8 @@ def test_capture_image_saves_a_jpg_file(tmp_path):
 
 def test_motion_event_triggers_capture():
     """
-    Simulerar att PIR-sensorn känner rörelse (låtsas-pinnen driva högt) och
-    verifierar att vår capture-funktion faktiskt anropas som callback —
-    inte att gpiozero "fungerar" i sig, utan att VI kopplat ihop den rätt.
+    Simulerar rörelse (pinnen driver högt) och verifierar att vår
+    capture-funktion anropas — dvs att VI kopplat ihop callbacken rätt.
     """
     calls = []
 
@@ -58,25 +43,15 @@ def test_motion_event_triggers_capture():
         calls.append(True)
         return Path("dummy.jpg")
 
-    # VIKTIGT: spara returvärdet. gpiozero:s bakgrundstråd (som pollar
-    # pinnen och triggar callbacks) håller bara en `weakref` till sensor-
-    # objektet — ett medvetet designval så att tråden dör automatiskt om
-    # sensorn skräpsamlas. Om vi inte behåller en referens här skräpsamlas
-    # objektet direkt när build_sensor() returnerar (refcount går till 0),
-    # och bakgrundstråden dör innan den hinner läsa av pinnen en enda gång.
+    # VIKTIGT: spara returvärdet. gpiozero håller bara en weakref till sensorn,
+    # så utan en egen referens skräpsamlas den direkt och bakgrundstråden dör.
     pir = build_sensor(PIR_GPIO_PIN, fake_capture)
 
     pin = Device.pin_factory.pin(PIR_GPIO_PIN)
 
-    # MotionSensor läser inte av pinnen direkt vid förändring — den är en
-    # SmoothedInputDevice som pollar pinnen i en bakgrundstråd (default
-    # sample_rate=10/s, dvs. var 0.1:e sekund). Dess ALLRA FÖRSTA avläsning
-    # sätter bara ett utgångsläge (ingen callback triggas då, oavsett
-    # värde) — det är först vid en FÖRÄNDRING mot det utgångsläget som
-    # when_motion triggas. Vi väntar därför in den första avläsningen
-    # (etablerar "ingen rörelse") INNAN vi simulerar rörelse, annars
-    # riskerar vi att låtsas-pinnens redan-höga värde blir utgångsläget
-    # istället för en övergång.
+    # MotionSensor pollar pinnen i en bakgrundstråd, och dess FÖRSTA avläsning
+    # bara sätter utgångsläge utan callback. Vi väntar in den innan vi driver
+    # pinnen hög, annars blir det höga värdet själva utgångsläget istället för en förändring.
     time.sleep(0.15)
 
     pin.drive_high()  # simulerar att HC-SR501 känner rörelse

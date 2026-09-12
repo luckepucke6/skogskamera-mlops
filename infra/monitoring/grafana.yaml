@@ -1,0 +1,112 @@
+# infra/monitoring/grafana.yaml — Grafana (dashboard-verktyget).
+#
+# Applicera i den här ordningen (namespace "monitoring" skapas av prometheus.yaml):
+#   kubectl apply -f infra/monitoring/prometheus.yaml
+#   kubectl create secret generic grafana-admin -n monitoring \
+#       --from-literal=admin-password=<ditt-eget-lösenord>
+#   kubectl apply -f infra/monitoring/grafana.yaml
+#
+# Secreten skapas manuellt med kubectl, inte som YAML i git — ett Secret är bara base64-kodat,
+# inte krypterat. FÖRENKLING: i produktion hade man använt sealed-secrets eller en extern
+# secrets-manager istället.
+
+# ConfigMap som talar om för Grafana var den hämtar metrics — "provisioning" läser in
+# datakällan automatiskt vid start istället för att klicka ihop den manuellt varje gång.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+data:
+  prometheus.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        # Kubernetes interna DNS-namn för Service:n "prometheus" (mönster:
+        # <service>.<namespace>.svc.cluster.local). Fungerar bara mellan poddar i klustret —
+        # inte samma adress som den externa LoadBalancer-IP:n vi människor använder.
+        url: http://prometheus.monitoring.svc.cluster.local:9090
+        isDefault: true
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data
+  namespace: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi # bara dashboards + inställningar i en liten SQLite-fil, behöver inte mer.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:13.2.1
+          env:
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              # valueFrom + secretKeyRef: hämtar värdet från Secreten vi skapade manuellt
+              # ovan, istället för att skriva lösenordet i klartext här i filen.
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin
+                  key: admin-password
+          ports:
+            - containerPort: 3000
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana
+            # Grafana läser automatiskt all provisioning under den här katalogen vid uppstart
+            # — ingen extra config-flagga behövs, bara rätt sökväg.
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "128Mi"
+            limits:
+              memory: "512Mi"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: grafana-data
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  type: LoadBalancer
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000

@@ -1,0 +1,118 @@
+# infra/monitoring/prometheus.yaml — Prometheus (metrics-databas).
+#
+# Applicera med: kubectl apply -f infra/monitoring/prometheus.yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+---
+# ConfigMap = en fil monterad i poden som om den låg på disk — kan ändras med `kubectl apply`
+# utan att bygga om imagen.
+#
+# Prometheus är pull-baserat (till skillnad från MLflow, dit man pushar): den hämtar själv
+# metrics från andra tjänster. "scrape_configs" nedan säger vilka adresser den frågar.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+
+    scrape_configs:
+      # Prometheus scrapear sig själv som exempel — bra för att verifiera att
+      # grundinstallationen fungerar (curl mot /-/healthy).
+      - job_name: prometheus
+        static_configs:
+          - targets: ["localhost:9090"]
+
+      # PLATSHÅLLARE: när Pi 3B+ har en inferens-endpoint med egna metrics läggs den till
+      # här som eget scrape-jobb, t.ex.:
+      #
+      # - job_name: edge-inference
+      #   static_configs:
+      #     - targets: ["skog-pi3.local:8000"]
+      #
+      # Byggs inte nu — inget dataflöde från edge-noden finns än.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-data
+  namespace: monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # samma skäl som i mlflow.yaml: en PVC med ReadWriteOnce, en replica.
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.14.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            # Utan retention fylls SD-kortet sakta av metrics som sparas för evigt. 30 dagar
+            # räcker för att se trender över veckor.
+            - --storage.tsdb.retention.time=30d
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            # Två mounts: configmap ger config-filen (read-only), PVC ger plats att skriva
+            # tidsseriedatabasen (read-write) — configmap-mounts kan inte skrivas till.
+            - name: config
+              mountPath: /etc/prometheus
+            - name: data
+              mountPath: /prometheus
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "128Mi"
+            limits:
+              memory: "512Mi"
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: prometheus-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  type: LoadBalancer # se mlflow.yaml för varför LoadBalancer (k3s ServiceLB) istället för Ingress.
+  selector:
+    app: prometheus
+  ports:
+    - port: 9090
+      targetPort: 9090
