@@ -91,22 +91,33 @@ blir trängre när SKOG-011 lägger till riktigt dataflöde.
       `ghcr.io/luckepucke6/skogskamera-mlops/inference:latest` hämtad och körd
 - [x] Kör en riktig lokal inferens (inte dummybild) på Pi 3B+ — klassade en riktig bild från kameran
 - [x] Mät prestanda — se CLAUDE.md för siffror
-- [ ] Koppla triggern till inferens-containern automatiskt (designval: `docker run` per bild eller
-      långlivad tjänst — hör ihop med SKOG-011:s behov av strukturerade resultat till MLflow)
+- [x] Koppla triggern till inferens-containern automatiskt — långlivad FastAPI-tjänst (uvicorn)
+      istället för `docker run` per bild, se CLAUDE.md för designvalet
 
 **Att hålla koll på:** `vcgencmd get_throttled` visade `0x50000` (historisk underspänning,
 inte pågående) på Pi 3B+ efter belastningstestet — samma sorts flagga som Pi 4 hade innan
 kabelbytet. Bevaka om den blir aktiv (`0x1`/`0x4`) under verklig drift.
 
-### SKOG-011 — Koppla ihop noderna 🟡 (väntar på SKOG-008 + SKOG-010)
-- [ ] Skicka resultat (art, konfidens, tid, bild) från Pi 3B+ till Pi 4
-- [ ] Logga i MLflow
-- [ ] Exponera som Prometheus-metrics
-- [ ] Bygg Grafana-dashboard
-- [ ] Koppla in Telegram-notis (återanvänd befintlig bot-kod)
+### SKOG-011 — Koppla ihop noderna ✅
+- [x] Skicka resultat (art, konfidens, tid, bild) från Pi 3B+ till Pi 4 — triggern POST:ar till
+      `inference/app.py`, som loggar i bakgrunden så triggerloopen aldrig blockeras
+- [x] Logga i MLflow — en run per detektion (`species`, `confidence`, `inference_ms`,
+      bild-artefakt), verifierat via API
+- [x] Exponera som Prometheus-metrics — `skogskamera_detections_total{species}`,
+      `_inference_seconds`, `_last_confidence`, `_sink_errors_total{sink}`; target `edge-inference` UP
+- [x] Bygg Grafana-dashboard — "Skogskamera" (5 paneler), provisionerad via
+      `infra/monitoring/grafana-dashboards.yaml`
+- [x] Koppla in Telegram-notis (ny bot, inte newscast-boten) — foto + bildtext bekräftat mottaget,
+      takt-begränsad till 1/60s (FÖRENKLING, se CLAUDE.md)
+
+**Problem som dök upp:** Grafana kraschade i loop (`Datasource provisioning error: data source
+not found`) när ett fast `uid: prometheus` lades till på en datakälla som redan fanns med
+auto-genererat uid sedan SKOG-008. Löst genom att radera PVC:n `grafana-data` (bara Grafanas
+egna inställningar, ingen mätdata) och låta den provisionera om helt rent.
 
 ### SKOG-012 — Fullt integrationstest 🟡 (väntar på SKOG-011)
-- [ ] End-to-end-test: rörelse → bild → klassificering → logg → dashboard → notis
+- [x] End-to-end-test: rörelse → bild → klassificering → logg → dashboard → notis — kört som en
+      del av SKOG-011:s verifiering (samma kväll), inte som ett separat pass
 - [ ] Testa CI/CD-flödet mot riktig hårdvara: kodändring → ny image → Pi 3B+ hämtar och kör den
 - [ ] Kör systemet en längre period (t.ex. ett dygn) och se att det är stabilt
 

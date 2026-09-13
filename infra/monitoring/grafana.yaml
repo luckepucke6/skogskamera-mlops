@@ -4,7 +4,7 @@
 #   kubectl apply -f infra/monitoring/prometheus.yaml
 #   kubectl create secret generic grafana-admin -n monitoring \
 #       --from-literal=admin-password=<ditt-eget-lösenord>
-#   kubectl apply -f infra/monitoring/grafana.yaml
+#   kubectl apply -f infra/monitoring/grafana.yaml -f infra/monitoring/grafana-dashboards.yaml
 #
 # Secreten skapas manuellt med kubectl, inte som YAML i git — ett Secret är bara base64-kodat,
 # inte krypterat. FÖRENKLING: i produktion hade man använt sealed-secrets eller en extern
@@ -22,6 +22,9 @@ data:
     apiVersion: 1
     datasources:
       - name: Prometheus
+        # Fast uid (annars slumpas en fram) — dashboarden i grafana-dashboards.yaml
+        # pekar på just detta uid för att hitta datakällan.
+        uid: prometheus
         type: prometheus
         access: proxy
         # Kubernetes interna DNS-namn för Service:n "prometheus" (mönster:
@@ -79,6 +82,12 @@ spec:
             # — ingen extra config-flagga behövs, bara rätt sökväg.
             - name: datasources
               mountPath: /etc/grafana/provisioning/datasources
+            # Samma idé för dashboards: provider-filen talar om VAR den ska leta,
+            # dashboard-JSON:en i grafana-dashboards.yaml ligger i katalogen den pekar på.
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
           readinessProbe:
             httpGet:
               path: /api/health
@@ -97,6 +106,12 @@ spec:
         - name: datasources
           configMap:
             name: grafana-datasources
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
 ---
 apiVersion: v1
 kind: Service

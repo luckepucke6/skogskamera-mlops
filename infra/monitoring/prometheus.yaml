@@ -29,14 +29,11 @@ data:
         static_configs:
           - targets: ["localhost:9090"]
 
-      # PLATSHÅLLARE: när Pi 3B+ har en inferens-endpoint med egna metrics läggs den till
-      # här som eget scrape-jobb, t.ex.:
-      #
-      # - job_name: edge-inference
-      #   static_configs:
-      #     - targets: ["skog-pi3.local:8000"]
-      #
-      # Byggs inte nu — inget dataflöde från edge-noden finns än.
+      # Inferens-tjänsten på Pi 3B+ (SKOG-010/011). IP, inte skog-pi3.local — k3s-podden
+      # kan inte slå upp mDNS-namn. Reservera IP:n i routern, annars slutar den träffa.
+      - job_name: edge-inference
+        static_configs:
+          - targets: ["192.168.1.88:8000"]
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

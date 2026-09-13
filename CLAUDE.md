@@ -21,9 +21,10 @@ SD-kort: SanDisk Extreme 64GB A2/U3 → Pi 4. SanDisk Ultra 64GB A1 → Pi 3B+. 
 Raspberry Pi OS Lite (64-bit, Debian trixie) via Raspberry Pi Imager, headless (SSH-nyckel,
 ingen lösenordsauth). Verifierat `uname -m` → `aarch64` på båda.
 
-IP:erna ovan är DHCP-tilldelade och kan ändras vid omstart av routern — använd hellre
-`.local`-hostnamnen (mDNS/Bonjour) i kommandon och config där det går. Om Pi 3B+ ska prata med
-Pi 4 över en fast adress (SKOG-011) bör IP:erna reserveras i routern innan dess.
+IP:erna ovan är nu **reserverade i routern** (DHCP-reservation på MAC-adress) — krävdes för
+SKOG-011, eftersom varken Docker-containern på Pi 3B+ eller Prometheus-podden i k3s kan slå upp
+`.local`-mDNS-namn. All config mellan noderna (Prometheus scrape-mål, `MLFLOW_TRACKING_URI`)
+använder därför IP, inte hostnamn. `.local` funkar fortfarande fint för SSH/kubectl från Macen.
 
 Ingen aktiv kylning — `vcgencmd measure_temp`/`get_throttled` har inte visat behov av kylfläns.
 
@@ -71,26 +72,35 @@ k3s (v1.36.4+k3s1) + MLflow + Prometheus + Grafana kör och svarar. Manifest i `
   512Mi + Grafana 512Mi) på en Pi 4 med 3.8 GB totalt. Fungerar idag, men blir trängre när
   SKOG-011 lägger till riktigt dataflöde — håll koll med `kubectl top pods -A`.
 
-## Edge-nod Pi 3B+ (SKOG-010)
+## Edge-nod Pi 3B+ (SKOG-010/011)
 
 - **Docker, inte k3s** — en Pi 3B+ med 905 MB RAM kör bara en container (inferens); k3s-agenten
   hade själv ätit ~300 MB i onödan.
-- Image: `ghcr.io/luckepucke6/skogskamera-mlops/inference:latest` (publik, `docker pull`
-  fungerar utan inloggning). Kör mot en bild: `docker run --rm -v
-  ~/skogskamera/edge/captures:/captures:ro <image> /captures/<fil>.jpg`.
-- **Prestanda:** ~139 ms ren inferens (`interpreter.invoke()`), ~2,5 s totalt per `docker run`
-  (containerstart + Python-import + modell-laddning dominerar, inte själva inferensen).
-- Triggern (`edge/camera_trigger.py`) och inferens-containern är inte hopkopplade än — det är
-  nästa steg i SKOG-010 (designval: `docker run` per bild eller en långlivad tjänst).
+- **Långlivad FastAPI-tjänst (`inference/app.py`), inte `docker run` per bild** — modellen laddas
+  en gång vid start istället för per anrop. Gick från ~2,5 s totalt per klassificering till
+  ~140 ms ren inferens. Bonus: Prometheus behöver ändå en HTTP-endpoint att skrapa.
+- Start: `docker run -d --name inference --restart unless-stopped -p 8000:8000
+  --env-file ~/skogskamera/.env ghcr.io/luckepucke6/skogskamera-mlops/inference:latest`.
+  `.env` (mall: `inference/.env.example`, riktiga värden bara på Pi:n, aldrig i git):
+  `MLFLOW_TRACKING_URI`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_MIN_INTERVAL_S`.
+  `--restart unless-stopped` = Docker startar om tjänsten själv vid krasch/omstart.
+- Endpoints: `GET /health`, `POST /classify` (multipart bild), `GET /metrics` (Prometheus).
+  Triggern (`edge/camera_trigger.py`) POST:ar dit efter varje sparad bild; fel (tjänsten nere)
+  loggas men stoppar aldrig rörelsebevakningen.
+- **Ny Telegram-bot** skapad för det här projektet (inte newscast-boten) — samma
+  `requests`-mot-Bot-API-mönster återanvänt, men egen token/chat-id.
+- MLflow-loggning och Telegram-notis körs som `BackgroundTasks` — svaret till triggern skickas
+  innan de körs klart, så ett långsamt/nere MLflow aldrig fördröjer nästa bild.
 
 ## Dataflöde
 
 1. Kameran upptäcker rörelse genom att jämföra bilder (`edge/camera_trigger.py`)
-2. En bild i full upplösning sparas
-3. TFLite-modellen på Pi 3B+ klassar innehållet
-4. Resultat (art, konfidens, tid, bild) skickas till Pi 4 → loggas i MLflow, exponeras som
-   Prometheus-metrics
-5. Grafana-dashboard uppdateras, Telegram-notis skickas (återanvänd befintlig bot-kod, bygg inte om)
+2. En bild i full upplösning sparas och POST:as till inferens-tjänsten (`inference/app.py`)
+3. TFLite-modellen klassar bilden, svarar direkt med art + konfidens
+4. I bakgrunden: resultatet loggas som en MLflow-run på Pi 4 (art, konfidens, tid, bild-artefakt)
+   och exponeras som Prometheus-metrics på tjänstens `/metrics`
+5. Grafana-dashboarden "Skogskamera" visar datan, Telegram-notis skickas (takt-begränsad, se
+   Edge-nod-avsnittet)
 
 ## CI/CD (separat flöde, inte samma som dataflödet ovan)
 
@@ -102,10 +112,10 @@ modellversion. Håll isär detta flöde från inferens-dataflödet i kod och i d
 ```
 .github/workflows/          CI/CD-pipelines
 edge/                       kamera-triggerlogik (bildjämförelse), körs på Pi 3B+
-inference/                  modell + Dockerfile för inferenscontainer
+inference/                  modell + app.py (FastAPI-tjänst) + Dockerfile
 infra/k3s/                  setup-pi4.sh — cgroup-fix + k3s-installation
 infra/MLflow/               mlflow.yaml (k3s-manifest)
-infra/monitoring/           prometheus.yaml, grafana.yaml (k3s-manifest)
+infra/monitoring/           prometheus.yaml, grafana.yaml, grafana-dashboards.yaml (k3s-manifest)
 ```
 
 (Notera versaliseringen `MLflow/` — konsekvent skiftläge, matchar den mapp SKOG-001 redan

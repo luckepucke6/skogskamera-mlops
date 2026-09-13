@@ -1,0 +1,108 @@
+# infra/monitoring/grafana-dashboards.yaml — dashboarden "Skogskamera", provisionerad
+# som fil istället för att byggas ihop manuellt i UI:t (försvinner annars om podden startas om).
+#
+# Applicera tillsammans med grafana.yaml, se ordningen där.
+
+# Talar om FÖR Grafana var den ska leta efter dashboard-JSON (katalogen nedan).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: monitoring
+data:
+  provider.yaml: |
+    apiVersion: 1
+    providers:
+      - name: skogskamera
+        type: file
+        options:
+          path: /var/lib/grafana/dashboards
+---
+# Själva dashboarden. "uid": "prometheus" i varje panels datasource måste matcha uid:t
+# satt i grafana.yamls datasource-provisionering — annars hittar panelerna ingen data.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: monitoring
+data:
+  skogskamera.json: |
+    {
+      "uid": "skogskamera",
+      "title": "Skogskamera",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": { "from": "now-24h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Detektioner senaste 24h",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "sum(increase(skogskamera_detections_total[24h]))", "refId": "A" }
+          ],
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 }
+        },
+        {
+          "id": 2,
+          "title": "Senaste konfidens",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": { "defaults": { "unit": "percentunit" } },
+          "targets": [
+            { "expr": "skogskamera_last_confidence", "refId": "A" }
+          ],
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 }
+        },
+        {
+          "id": 3,
+          "title": "Andel per art",
+          "type": "piechart",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum by (species) (skogskamera_detections_total)",
+              "legendFormat": "{{species}}",
+              "refId": "A"
+            }
+          ],
+          "gridPos": { "h": 6, "w": 12, "x": 12, "y": 0 }
+        },
+        {
+          "id": 4,
+          "title": "Detektioner per art över tid",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "expr": "sum by (species) (increase(skogskamera_detections_total[5m]))",
+              "legendFormat": "{{species}}",
+              "refId": "A"
+            }
+          ],
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 }
+        },
+        {
+          "id": 5,
+          "title": "Inferenstid p50/p95",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(skogskamera_inference_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p50",
+              "refId": "A"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(skogskamera_inference_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p95",
+              "refId": "B"
+            }
+          ],
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 }
+        }
+      ]
+    }
