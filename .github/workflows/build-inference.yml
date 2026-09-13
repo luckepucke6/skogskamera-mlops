@@ -64,17 +64,31 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Smoke-test — klassificera en känd testbild
-        # Kör containern mot en bild med känt facit (2a.jpg ska ge "ibex") och
-        # stoppar pipelinen om svaret inte stämmer — en trasig image når då
-        # aldrig registryt.
+        # Imagens ENTRYPOINT är nu uvicorn (FastAPI-tjänsten), så CLI-testet körs med
+        # --entrypoint python. 2a.jpg ska ge "ibex" — stoppar pipelinen annars, en
+        # trasig image når då aldrig registryt.
         run: |
           IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
-          OUTPUT=$(docker run --rm "$IMAGE_TAG" test-images/2a.jpg)
+          OUTPUT=$(docker run --rm --entrypoint python "$IMAGE_TAG" test_model.py test-images/2a.jpg)
           echo "$OUTPUT"
           echo "$OUTPUT" | grep -q "1\. ibex" || {
             echo "Smoke-test misslyckades: förväntade 'ibex' som topp-1-klass"
             exit 1
           }
+
+      - name: Smoke-test — FastAPI-tjänsten svarar
+        # Kör tjänsten som den faktiskt körs på Pi 3B+ och verifierar att den startar
+        # och svarar, utan MLflow/Telegram-env satt (sinks ska då bara hoppas över).
+        run: |
+          IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -1)
+          docker run -d --name inference-smoke -p 8000:8000 "$IMAGE_TAG"
+          for i in $(seq 1 10); do
+            curl -sf http://localhost:8000/health && break
+            sleep 1
+          done
+          curl -sf http://localhost:8000/health
+          docker logs inference-smoke
+          docker rm -f inference-smoke
 
       - name: Logga in på GHCR
         # GITHUB_TOKEN skapas automatiskt av GitHub Actions för varje

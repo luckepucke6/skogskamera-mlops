@@ -5,3 +5,6 @@
 numpy==2.5.2
 pillow==12.3.0
 pytest==8.4.2
+
+# POST:ar bilden till inferens-tjänsten. Finns redan som apt-paket (python3-requests) på Pi:n.
+requests==2.34.2

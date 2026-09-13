@@ -16,8 +16,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Nu resten: modell, labels, testbilder och själva scriptet.
 COPY models/ models/
 COPY test-images/ test-images/
-COPY test_model.py .
+COPY test_model.py app.py ./
 
-# ENTRYPOINT gör containern till ett kommando: `docker run <image> bild.jpg`
-# motsvarar `python test_model.py bild.jpg`.
-ENTRYPOINT ["python", "test_model.py"]
+# MLflow-klienten (gitpython) letar efter en git-binär för att stämpla runs med commit-SHA.
+# Den finns inte i imagen — utan den här raden bara varnar den, men tyst är trevligare.
+ENV GIT_PYTHON_REFRESH=quiet
+
+EXPOSE 8000
+
+# Långlivad tjänst istället för `docker run <image> bild.jpg` (se app.py för varför) —
+# därför uvicorn som ENTRYPOINT, inte python test_model.py.
+ENTRYPOINT ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

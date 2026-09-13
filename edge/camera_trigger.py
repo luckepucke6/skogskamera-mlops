@@ -4,11 +4,13 @@ lådan står bakom fönsterglas som blockerar PIR:ens IR-signal.
 Testbart på Mac utan kamera — se test_camera_trigger.py.
 """
 
+import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 import numpy as np
+import requests
 from PIL import Image
 
 # Två strömmar från kameran: lores (liten, gråskala) för jämförelsen, main (full
@@ -25,6 +27,9 @@ COOLDOWN_FRAMES = 5
 INTERVAL_S = 1.0
 
 CAPTURES_DIR = Path(__file__).parent / "captures"
+
+# Tjänsten körs på samma Pi (Docker, port 8000) i normalfallet, se CLAUDE.md.
+INFERENCE_URL = os.environ.get("INFERENCE_URL", "http://localhost:8000/classify")
 
 
 def detect_motion(
@@ -51,6 +56,23 @@ def save_capture(image: Image.Image, save_dir: Path = CAPTURES_DIR) -> Path:
     dest = save_dir / f"{timestamp}.jpg"
     image.save(dest)
     return dest
+
+
+def send_to_inference(image_path: Path, url: str = INFERENCE_URL) -> None:
+    """
+    Skickar en sparad bild till inferens-tjänsten och skriver ut resultatet.
+
+    Fel (tjänsten nere, timeout) fångas och loggas bara — kameran ska fortsätta
+    bevaka rörelse även om klassificeringen tillfälligt inte fungerar.
+    """
+    try:
+        with open(image_path, "rb") as f:
+            response = requests.post(url, files={"file": (image_path.name, f, "image/jpeg")}, timeout=10)
+        response.raise_for_status()
+        result = response.json()
+        print(f"  → {result['species']} ({result['confidence']:.0%})")
+    except requests.RequestException as e:
+        print(f"  → inferens misslyckades: {e}")
 
 
 class PiCamera:
@@ -94,8 +116,14 @@ def run(
     frames: Iterable[tuple[np.ndarray, Image.Image]],
     save_dir: Path = CAPTURES_DIR,
     cooldown_frames: int = COOLDOWN_FRAMES,
+    on_capture: Callable[[Path], None] | None = None,
 ) -> None:
-    """Väntar på rörelse i frames och sparar en bild per upptäckt händelse."""
+    """
+    Väntar på rörelse i frames och sparar en bild per upptäckt händelse.
+
+    on_capture anropas efter varje sparad bild — production skickar den vidare till
+    inferens-tjänsten (se __main__), testerna samlar bara sökvägarna i en lista.
+    """
     prev_gray = None
     cooldown = 0
 
@@ -108,6 +136,8 @@ def run(
                 elif detect_motion(prev_gray, gray):
                     path = save_capture(full, save_dir)
                     print(f"Rörelse upptäckt — bild sparad: {path}")
+                    if on_capture is not None:
+                        on_capture(path)
                     cooldown = cooldown_frames
             prev_gray = gray
     except KeyboardInterrupt:
@@ -115,4 +145,4 @@ def run(
 
 
 if __name__ == "__main__":
-    run(PiCamera().frames())
+    run(PiCamera().frames(), on_capture=send_to_inference)

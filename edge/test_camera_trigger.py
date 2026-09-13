@@ -78,3 +78,15 @@ def test_cooldown_blocks_repeat_captures(tmp_path):
     frames = [a, b, a, b, a, b]  # växlar fram och tillbaka — utan cooldown blir det flera träffar.
     run(frames, save_dir=tmp_path, cooldown_frames=5)
     assert len(list(tmp_path.glob("*.jpg"))) == 1
+
+
+def test_on_capture_called_with_saved_path(tmp_path):
+    """on_capture ska anropas med sökvägen till den sparade bilden, inte alls vid stillhet."""
+    frames = [
+        (load_gray("2a.jpg"), load_full("2a.jpg")),
+        (load_gray("3a.jpg"), load_full("3a.jpg")),
+    ]
+    captured_paths = []
+    run(frames, save_dir=tmp_path, on_capture=captured_paths.append)
+
+    assert captured_paths == list(tmp_path.glob("*.jpg"))
