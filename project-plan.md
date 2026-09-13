@@ -84,12 +84,19 @@ blir trängre när SKOG-011 lägger till riktigt dataflöde.
 - [x] Verifiera att kameran kan ta en bild via kommandorad — `rpicam-still`, bild bekräftad skarp
 - [x] Verifiera att PIR-sensorn triggar en signal du kan läsa av — `pinctrl get 4`, lo→hi vid rörelse bekräftat
 
-### SKOG-010 — Deploya edge-koden på Pi 3B+ 🟡 (väntar på SKOG-005 + SKOG-009)
+### SKOG-010 — Deploya edge-koden på Pi 3B+ ✅
 - [x] Skriv om triggern till bildjämförelse (`picamera2`) — PIR fungerar inte bakom fönsterglas
 - [x] Verifiera riktig rörelsedetektering vid fönstret — 8 bilder sparade, verklig rörelse bekräftad visuellt
-- [ ] Flytta över triggerlogik + inferens-container till Pi 3B+
-- [ ] Kör en riktig lokal inferens (inte dummybild) på Pi 3B+
-- [ ] Mät prestanda (hur lång tid tar en inferens på riktig hårdvara?)
+- [x] Flytta över triggerlogik + inferens-container till Pi 3B+ — Docker installerad (inte k3s, se CLAUDE.md),
+      `ghcr.io/luckepucke6/skogskamera-mlops/inference:latest` hämtad och körd
+- [x] Kör en riktig lokal inferens (inte dummybild) på Pi 3B+ — klassade en riktig bild från kameran
+- [x] Mät prestanda — se CLAUDE.md för siffror
+- [ ] Koppla triggern till inferens-containern automatiskt (designval: `docker run` per bild eller
+      långlivad tjänst — hör ihop med SKOG-011:s behov av strukturerade resultat till MLflow)
+
+**Att hålla koll på:** `vcgencmd get_throttled` visade `0x50000` (historisk underspänning,
+inte pågående) på Pi 3B+ efter belastningstestet — samma sorts flagga som Pi 4 hade innan
+kabelbytet. Bevaka om den blir aktiv (`0x1`/`0x4`) under verklig drift.
 
 ### SKOG-011 — Koppla ihop noderna 🟡 (väntar på SKOG-008 + SKOG-010)
 - [ ] Skicka resultat (art, konfidens, tid, bild) från Pi 3B+ till Pi 4

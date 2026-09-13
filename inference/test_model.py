@@ -5,6 +5,7 @@ specifik — duger för att testa kedjan, inte riktig artbestämning.
 """
 
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -59,7 +60,13 @@ def classify(image_path: str) -> None:
     input_data = preprocess_image(Path(image_path), input_details["shape"])
 
     interpreter.set_tensor(input_details["index"], input_data)
-    interpreter.invoke()  # kör själva inferensen genom modellgrafen
+
+    # Mäter bara invoke() — resten (containerstart, modell-laddning) är fast overhead
+    # som inte beror på val av modell/kvantisering.
+    start = time.perf_counter()
+    interpreter.invoke()
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    print(f"Inferens: {elapsed_ms:.1f} ms")
 
     # [0] tar bort batch-dimensionen — ger en platt vektor, en sannolikhet per klass.
     output = interpreter.get_tensor(output_details["index"])[0]

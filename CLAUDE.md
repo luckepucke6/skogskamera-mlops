@@ -71,6 +71,18 @@ k3s (v1.36.4+k3s1) + MLflow + Prometheus + Grafana kör och svarar. Manifest i `
   512Mi + Grafana 512Mi) på en Pi 4 med 3.8 GB totalt. Fungerar idag, men blir trängre när
   SKOG-011 lägger till riktigt dataflöde — håll koll med `kubectl top pods -A`.
 
+## Edge-nod Pi 3B+ (SKOG-010)
+
+- **Docker, inte k3s** — en Pi 3B+ med 905 MB RAM kör bara en container (inferens); k3s-agenten
+  hade själv ätit ~300 MB i onödan.
+- Image: `ghcr.io/luckepucke6/skogskamera-mlops/inference:latest` (publik, `docker pull`
+  fungerar utan inloggning). Kör mot en bild: `docker run --rm -v
+  ~/skogskamera/edge/captures:/captures:ro <image> /captures/<fil>.jpg`.
+- **Prestanda:** ~139 ms ren inferens (`interpreter.invoke()`), ~2,5 s totalt per `docker run`
+  (containerstart + Python-import + modell-laddning dominerar, inte själva inferensen).
+- Triggern (`edge/camera_trigger.py`) och inferens-containern är inte hopkopplade än — det är
+  nästa steg i SKOG-010 (designval: `docker run` per bild eller en långlivad tjänst).
+
 ## Dataflöde
 
 1. Kameran upptäcker rörelse genom att jämföra bilder (`edge/camera_trigger.py`)
