@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from camera_trigger import LORES_SIZE, detect_motion, run
+from camera_trigger import LORES_SIZE, detect_motion, motion_score, run
 
 TEST_IMAGES_DIR = Path(__file__).parent.parent / "inference" / "test-images"
 
@@ -39,7 +39,7 @@ def test_detect_motion_large_change_is_true():
 def test_detect_motion_small_change_is_false():
     prev = np.zeros((240, 320), dtype=np.uint8)
     curr = prev.copy()
-    curr[:5, :5] = 255  # << 2% av bilden — ska inte räknas som rörelse.
+    curr[:5, :5] = 255  # 25 px, långt under halva en 40x40-ruta — ska inte räknas som rörelse.
     assert detect_motion(prev, curr) is False
 
 
@@ -48,6 +48,32 @@ def test_detect_motion_ignores_uniform_brightness_change():
     prev = np.full((240, 320), 100, dtype=np.uint8)
     curr = np.full((240, 320), 110, dtype=np.uint8)  # +10 överallt, under pixel_threshold=25.
     assert detect_motion(prev, curr) is False
+
+
+def test_detect_motion_ignores_scattered_noise():
+    """
+    Utspridda ändringar (vind i grenar, sensorbrus) ska ge lågt maxvärde per ruta,
+    till skillnad från en kompakt klump (nästa test) — det är hela poängen med metoden.
+    """
+    rng = np.random.default_rng(0)
+    prev = np.zeros((240, 320), dtype=np.uint8)
+    curr = prev.copy()
+    noisy_pixels = rng.random((240, 320)) < 0.05  # 5% av pixlarna, utspridda över hela bilden.
+    curr[noisy_pixels] = 255
+    assert detect_motion(prev, curr) is False
+
+
+def test_detect_motion_compact_block_is_true():
+    """En kompakt klump (djur/person) som fyller en ruta ska räknas som rörelse."""
+    prev = np.zeros((240, 320), dtype=np.uint8)
+    curr = prev.copy()
+    curr[100:160, 140:200] = 255  # 60x60 sammanhängande block, mitt i bilden.
+    assert detect_motion(prev, curr) is True
+
+
+def test_motion_score_identical_images_is_zero():
+    gray = load_gray("2a.jpg")
+    assert motion_score(gray, gray) == 0.0
 
 
 def test_first_frame_is_baseline_only(tmp_path):

@@ -11,15 +11,18 @@ from typing import Callable, Iterable
 
 import numpy as np
 import requests
-from PIL import Image
+from PIL import Image, ImageFilter
 
 # Två strömmar från kameran: lores (liten, gråskala) för jämförelsen, main (full
 # upplösning) för bilden vi faktiskt sparar. 1296x972 är OV5647:s binnade helbildsläge.
 LORES_SIZE = (320, 240)
 MAIN_SIZE = (1296, 972)
 
-PIXEL_THRESHOLD = 25  # hur mycket en enskild pixel måste ändras (av 255) för att räknas.
-MIN_CHANGED_FRACTION = 0.02  # hur stor andel av bilden som måste ändras för "rörelse".
+# Env-läsbara så de kan justeras via systemd (Environment=) utan kodändring/omdeploy.
+PIXEL_THRESHOLD = int(os.environ.get("PIXEL_THRESHOLD", "25"))  # hur mycket en pixel måste ändras.
+MIN_CELL_FRACTION = float(os.environ.get("MIN_CELL_FRACTION", "0.5"))  # se motion_score.
+CELL_SIZE = int(os.environ.get("CELL_SIZE", "40"))  # rutstorlek i pixlar, se motion_score.
+BLUR_RADIUS = int(os.environ.get("BLUR_RADIUS", "2"))  # suddar bort bladflimmer/sensorbrus.
 
 # Efter en sparad bild ignoreras nästa COOLDOWN_FRAMES bilder — motsvarar PIR-sensorns
 # fördröjningspotentiometer, fast i kod och deterministiskt.
@@ -32,21 +35,44 @@ CAPTURES_DIR = Path(__file__).parent / "captures"
 INFERENCE_URL = os.environ.get("INFERENCE_URL", "http://localhost:8000/classify")
 
 
-def detect_motion(
+def motion_score(
     prev: np.ndarray,
     curr: np.ndarray,
     pixel_threshold: int = PIXEL_THRESHOLD,
-    min_changed_fraction: float = MIN_CHANGED_FRACTION,
-) -> bool:
+    cell_size: int = CELL_SIZE,
+    blur_radius: int = BLUR_RADIUS,
+) -> float:
     """
-    True om tillräckligt stor andel pixlar ändrats mer än pixel_threshold.
+    Delar bilden i cell_size×cell_size-rutor och returnerar den mest ändrade rutans andel
+    ändrade pixlar (0–1) — inte hela bildens andel.
 
-    FÖRENKLING: fasta trösklar, ingen bakgrundsmodell — vind i träd eller ändrat
-    ljus kan ge falska träffar. Riktig lösning: bakgrundssubtraktion (t.ex. OpenCV MOG2).
+    Varför: ett djur/en person är en kompakt klump som fyller en eller ett par rutor helt,
+    medan vind i grenar och skuggor som rör sig ger utspridda, glesa ändringar över hela
+    bilden. Uppmätt på riktiga bilder: vind gav max 0.21 i en enskild ruta, en person
+    gående gav 0.79–1.00 — global andel för samma bilder låg för nära varandra (0.02–0.07)
+    för att skilja dem åt. Blur:en (blur_radius) tar bort bladflimmer/sensorbrus innan
+    jämförelsen, annars läcker enstaka rutor över tröskeln ändå.
+
+    FÖRENKLING: fortfarande ingen riktig bakgrundsmodell (t.ex. OpenCV MOG2). Ett stort djur
+    som står helt stilla ger inget utslag, och djur mindre än en ruta kan missas — medvetet,
+    de går ändå inte att klassa på en så liten yta.
     """
+    if blur_radius > 0:
+        prev = np.array(Image.fromarray(prev.astype(np.uint8)).filter(ImageFilter.GaussianBlur(blur_radius)))
+        curr = np.array(Image.fromarray(curr.astype(np.uint8)).filter(ImageFilter.GaussianBlur(blur_radius)))
+
     diff = np.abs(curr.astype(int) - prev.astype(int))
-    changed_fraction = (diff > pixel_threshold).mean()
-    return bool(changed_fraction > min_changed_fraction)
+    mask = diff > pixel_threshold
+
+    height, width = mask.shape
+    trimmed_h, trimmed_w = (height // cell_size) * cell_size, (width // cell_size) * cell_size
+    grid = mask[:trimmed_h, :trimmed_w].reshape(trimmed_h // cell_size, cell_size, trimmed_w // cell_size, cell_size)
+    return float(grid.mean(axis=(1, 3)).max())
+
+
+def detect_motion(prev: np.ndarray, curr: np.ndarray, min_cell_fraction: float = MIN_CELL_FRACTION) -> bool:
+    """True om motion_score överstiger tröskeln — se motion_score för varför den mäts så."""
+    return motion_score(prev, curr) > min_cell_fraction
 
 
 def save_capture(image: Image.Image, save_dir: Path = CAPTURES_DIR) -> Path:
@@ -126,19 +152,29 @@ def run(
     """
     prev_gray = None
     cooldown = 0
+    recent_scores: list[float] = []  # för tuning-loggen nedan, en rad ungefär per minut.
 
     print("Väntar på rörelse (Ctrl+C för att avbryta)...")
     try:
         for gray, full in frames:
             if prev_gray is not None:
+                score = motion_score(prev_gray, gray)
+                recent_scores.append(score)
+
                 if cooldown > 0:
                     cooldown -= 1
-                elif detect_motion(prev_gray, gray):
+                elif score > MIN_CELL_FRACTION:
                     path = save_capture(full, save_dir)
                     print(f"Rörelse upptäckt — bild sparad: {path}")
                     if on_capture is not None:
                         on_capture(path)
                     cooldown = cooldown_frames
+
+                # Skriver ut högsta rörelsepoängen senaste ~60 bilderna — ger en känsla i
+                # journalctl för hur nära vinden ligger tröskeln, underlag för justering.
+                if len(recent_scores) >= 60:
+                    print(f"senaste minuten: max rörelsepoäng {max(recent_scores):.2f} (tröskel {MIN_CELL_FRACTION})")
+                    recent_scores.clear()
             prev_gray = gray
     except KeyboardInterrupt:
         print("\nAvslutar.")

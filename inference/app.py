@@ -17,6 +17,9 @@ from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
 
 from test_model import classify_image, load_model
 
+# Utan detta skriver vår egen logger bara ut vid fel — uvicorn konfigurerar bara sina egna
+# loggrar, inte "skogskamera". Med den här raden syns även lyckade sändningar i `docker logs`.
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("skogskamera")
 
 MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI", "")
@@ -87,6 +90,7 @@ def log_to_mlflow(species: str, confidence: float, inference_ms: float, image_by
             mlflow.log_params({"species": species})
             mlflow.log_metrics({"confidence": confidence, "inference_ms": inference_ms})
             mlflow.log_image(Image.open(io.BytesIO(image_bytes)), "capture.jpg")
+        logger.info("MLflow-run loggad: %s", species)
     except Exception:
         logger.exception("MLflow-loggning misslyckades")
         SINK_ERRORS.labels(sink="mlflow").inc()
@@ -110,9 +114,12 @@ def notify_telegram(species: str, confidence: float, image_bytes: bytes) -> None
             f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto",
             data={"chat_id": TELEGRAM_CHAT_ID, "caption": f"🦌 {species} ({confidence:.0%})"},
             files={"photo": ("capture.jpg", image_bytes, "image/jpeg")},
-            timeout=10,
+            # UPPMÄTT: fotouppladdning från Pi 3B+ tog >10s några gånger under belastning
+            # (SKOG-012:s dygnstest) och gav ReadTimeout — 30s gav marginal.
+            timeout=30,
         )
         _last_telegram_sent = now
+        logger.info("Telegram-notis skickad: %s", species)
     except Exception:
         logger.exception("Telegram-notis misslyckades")
         SINK_ERRORS.labels(sink="telegram").inc()

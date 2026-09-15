@@ -91,6 +91,23 @@ k3s (v1.36.4+k3s1) + MLflow + Prometheus + Grafana kör och svarar. Manifest i `
   `requests`-mot-Bot-API-mönster återanvänt, men egen token/chat-id.
 - MLflow-loggning och Telegram-notis körs som `BackgroundTasks` — svaret till triggern skickas
   innan de körs klart, så ett långsamt/nere MLflow aldrig fördröjer nästa bild.
+- **Triggern körs som systemd-tjänst** (`skogskamera-trigger.service`, `Restart=always`,
+  `enabled`) — inte i en SSH-terminal, som dör så fort sessionen stängs. Loggar:
+  `journalctl -u skogskamera-trigger.service -f`. Inferens-containern har redan
+  `--restart unless-stopped`. Båda överlever krasch/omstart utan att någon är inloggad.
+- **Rörelsedetektering (SKOG-012):** `motion_score` delar bilden i rutor (`CELL_SIZE=40`) och
+  tar den **mest** ändrade rutans andel, inte hela bildens — ett djur är en kompakt klump, vind
+  i grenar är utspritt. Suddas med `BLUR_RADIUS=2` (Gaussisk) innan jämförelsen, annars läcker
+  sensorbrus/bladflimmer igenom ändå. Konstanterna (`PIXEL_THRESHOLD`, `MIN_CELL_FRACTION=0.5`,
+  `CELL_SIZE`, `BLUR_RADIUS`) läses från env — justera i systemd-unitens `Environment=` utan
+  omdeploy. `journalctl` skriver en rad per minut med senaste minutens maxpoäng, bra för att se
+  hur nära vinden ligger tröskeln.
+  **Känd kvarvarande brist:** direkt solljus i linsen eftermiddagstid ger linsflare som är lika
+  kompakt som ett djur — löses inte av tröskeljustering. Fysisk fix: linshuv eller vinkla om
+  kameran något.
+- **Telegram-timeout 30s** (var 10) — fotouppladdning från Pi 3B+ tog längre än 10s några
+  gånger under belastning (SKOG-012:s dygnstest), gav tysta `ReadTimeout`-fel. Appen loggar nu
+  även vid lyckad sändning (`logger.info`), inte bara vid fel — annars är tystnad tvetydig.
 
 ## Dataflöde
 

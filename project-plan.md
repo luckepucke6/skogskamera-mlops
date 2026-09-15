@@ -119,13 +119,35 @@ egna inställningar, ingen mätdata) och låta den provisionera om helt rent.
 - [x] End-to-end-test: rörelse → bild → klassificering → logg → dashboard → notis — kört som en
       del av SKOG-011:s verifiering (samma kväll), inte som ett separat pass
 - [ ] Testa CI/CD-flödet mot riktig hårdvara: kodändring → ny image → Pi 3B+ hämtar och kör den
-- [ ] Kör systemet en längre period (t.ex. ett dygn) och se att det är stabilt
+- [x] Kör systemet en längre period (t.ex. ett dygn) och se att det är stabilt — triggern körs som
+      systemd-tjänst (`skogskamera-trigger.service`, `Restart=always`), inferens-containern har
+      `--restart unless-stopped`, båda överlever omstart/krasch utan aktiv SSH-session
+
+**Resultat av dygnskörningen (13–15 sep):** ingen krasch i vare sig trigger eller inferens-tjänst.
+99 detektioner, men ~94 var falska (vind i grenar/skuggor på gräset, se nedan) — bara ett fåtal
+verkliga (personer). Två problem hittades och åtgärdades:
+1. **Rörelsedetektering för känslig för vind:** bytte från "andel ändrade pixlar i hela bilden"
+   till "mest ändrade rutans andel" (`motion_score` i `edge/camera_trigger.py`) + gaussisk
+   blur. Verifierat offline mot alla 113 sparade bilder: alla 11 riktiga personpassager
+   triggar fortfarande (0.55–1.00), vind-falsklarmen föll från ~30 till 3 (i den filtrerade
+   analysen av bildpar med <15s mellanrum). De 3 kvarvarande orsakas av **direkt solljus i
+   linsen** eftermiddagstid (linsflare är lika kompakt som ett djur) — ett optiskt problem,
+   inte något tröskeljustering löser. Förslag: linshuv eller vinkla om kameran något.
+2. **4 Telegram-notiser misslyckades** (`ReadTimeout`, `timeout=10`) — fotouppladdning tog
+   ibland längre än så under belastning. Höjd till 30s. Lade även till loggrader vid lyckad
+   sändning (`inference/app.py`) — tystnad vid fel var tidigare tvetydig (gick inte skilja
+   "lyckades" från "kastades aldrig").
+3. **Återkommande underspänning på Pi 3B+** (`throttled` aktiv, `dmesg` visar 10+ händelser/dygn)
+   — öppen punkt, inte löst än. Samma symptombild som Pi 4 hade (SKOG-007/008). Nästa steg:
+   kolla vilken kabel/adapter som används.
 
 ---
 
 ## Efter MVP (valfritt, inte kritiskt för portföljmålet)
 
 - [ ] Fler modellklasser / förbättrad noggrannhet
-- [ ] Automatisk omstart vid krasch (systemd eller k3s-nivå)
+- [x] Automatisk omstart vid krasch — klart, se SKOG-012
 - [ ] Historik/statistik-vy i Grafana (t.ex. mest sedda arter per vecka)
+- [ ] Streamlit-dashboard: bläddra captures + MLflow-resultat + rörelsepoäng över tid, för
+      felsökning och tuning (användarens idé, 15/9) — separat från Grafana, mer interaktivt
 - [ ] Skriva upp projektet (README med bilder/GIF av dashboard) för portföljen
